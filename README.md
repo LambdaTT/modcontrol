@@ -1,6 +1,6 @@
 # lambdatt-php/modcontrol
 
-A SplitPHP Framework plugin for an Identity and Access Management system.
+A SplitPHP Framework plugin to provide control over modules and entities inside your application.
 
 ---
 
