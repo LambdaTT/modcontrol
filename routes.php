@@ -1,8 +1,10 @@
 <?php
-namespace application\routes\api;
 
-use \engine\WebService;
-class Applicationmodules extends WebService
+namespace Modcontrol\Routes;
+
+use SplitPHP\WebService;
+
+class ModControl extends WebService
 {
   public function init()
   {
@@ -10,20 +12,20 @@ class Applicationmodules extends WebService
     // MODULE ENDPOINTS:
     /////////////////
 
-    $this->addEndpoint('GET', '/v1/module/?moduleId?', function($params){
+    $this->addEndpoint('GET', '/v1/module/?moduleId?', function ($params) {
       // Auth user login:
       if (!$this->getService('iam/session')->authenticate()) return $this->response->withStatus(401);
-  
-      $data = $this->getService('application_module')->get(['id_core_module' => $params['moduleId']]);
+
+      $data = $this->getService('modcontrol/control')->get(['id_core_module' => $params['moduleId']]);
       if (empty($data)) return $this->response->withStatus(404);
-  
+
       return $this->response->withData($data);
     });
-    $this->addEndpoint('GET', '/v1/module', function($params){
+    $this->addEndpoint('GET', '/v1/module', function ($params) {
       // Auth user login:
       if (!$this->getService('iam/session')->authenticate()) return $this->response->withStatus(401);
-  
-      return $this->response->withData($this->getService('application_module')->list($params));
+
+      return $this->response->withData($this->getService('modcontrol/control')->list($params));
     });
   }
 }

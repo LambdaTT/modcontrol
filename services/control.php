@@ -1,9 +1,10 @@
 <?php
-namespace application\services;
 
-use \engine\Service;
+namespace Modcontrol\Services;
 
-class Application_module extends Service
+use SplitPHP\Service;
+
+class ModControlService extends Service
 {
   /* List all modules related to a profile, based on parameters. */
 
