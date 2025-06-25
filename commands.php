@@ -2,9 +2,9 @@
 
 namespace Filemanager\Commands;
 
-use Exception;
 use SplitPHP\AppLoader;
 use SplitPHP\Cli;
+use SplitPHP\Database\Dao;
 use SplitPHP\ModLoader;
 use SplitPHP\Utils;
 use SplitPHP\ObjLoader;
@@ -18,114 +18,32 @@ class Commands extends Cli
       $limit   = isset($args['--limit']) ? (int)$args['--limit'] : 10;
       $sortBy  = $args['--sort-by']         ?? null;
       $sortDir = $args['--sort-direction']  ?? 'ASC';
-      unset($args['--limit'], $args['--sort-by'], $args['--sort-direction']);
-
       $page = isset($args['--page']) ? (int)$args['--page'] : 1;
-      unset($args['--page']);
+      unset($args['--limit'], $args['--sort-by'], $args['--sort-direction'], $args['--page']);
 
-      // --- <== HERE: open STDIN in BLOCKING mode (no stream_set_blocking) ===>
-      $stdin = fopen('php://stdin', 'r');
-      // on *nix, disable line buffering & echo
-      if (DIRECTORY_SEPARATOR !== '\\') {
-        system('stty -icanon -echo');
+      $params = array_merge($args, [
+        '$limit' => $limit,
+        '$limit_multiplier' => 1, // No multiplier for pagination
+        '$page'  => $page,
+      ]);
+
+      if ($sortBy) {
+        $params['$sort_by']        = $sortBy;
+        $params['$sort_direction'] = $sortDir;
       }
 
-      $exit = false;
-      while (! $exit) {
-        // Clear screen + move cursor home
-        if (DIRECTORY_SEPARATOR === '\\') {
-          system('cls');
-        } else {
-          echo "\033[2J\033[H";
-        }
+      $getRows = function () use (&$params) {
+        return $this->getService('modcontrol/control')->list($params);
+      };
 
-        // Header & hints
-        Utils::printLn($this->getService('utils/clihelper')->ansi("Welcome to the Modules List Command!\n", 'color: cyan; font-weight: bold'));
-        Utils::printLn("HINTS:");
-        Utils::printLn("  • --limit={$limit}   (items/page)");
-        Utils::printLn("  • --sort-by={$sortBy}   --sort-direction={$sortDir}");
-        if (DIRECTORY_SEPARATOR === '\\') {
-          Utils::printLn("  • Press 'n' = next page, 'p' = previous page, 'q' = quit");
-        } else {
-          Utils::printLn("  • ←/→ arrows to navigate pages, 'q' to quit");
-        }
-        Utils::printLn("  • To see the list of entities inside each module, run 'modcontrol:entities:list --module=<module_name>'");
-        Utils::printLn("  • Press 'ctrl+c' to exit at any time");
-        Utils::printLn();
+      $columns = [
+        'id_mdc_module'           => 'ID',
+        'dt_created'              => 'Created At',
+        'ds_title'                => 'Module',
+        'numEntities'             => 'Entities',
+      ];
 
-        // Fetch & render
-        $params = array_merge($args, [
-          '$limit' => $limit,
-          '$limit_multiplier' => 1, // No multiplier for pagination
-          '$page'  => $page,
-        ]);
-        if ($sortBy) {
-          $params['$sort_by']        = $sortBy;
-          $params['$sort_direction'] = $sortDir;
-        }
-
-        $rows = $this->getService('modcontrol/control')->list($params);
-
-        if (empty($rows)) {
-          Utils::printLn("  >> No modules found on page {$page}.");
-        } else {
-          Utils::printLn(" Page {$page} — showing " . count($rows) . " items");
-          Utils::printLn(str_repeat('─', 60));
-          $this->getService('utils/clihelper')->table($rows, [
-            'id_mdc_module'           => 'ID',
-            'dt_created'              => 'Created At',
-            'ds_title'                => 'Module',
-            'numEntities'             => 'Entities',
-          ]);
-        }
-
-        // --- <== HERE: wait for exactly one keypress, blocking until you press ===>
-        $c = fgetc($stdin);
-        if (DIRECTORY_SEPARATOR === '\\') {
-          $input = strtolower($c);
-        } else {
-          if ($c === "\033") {             // arrow keys start with ESC
-            $input = $c . fgetc($stdin) . fgetc($stdin);
-          } else {
-            $input = $c;
-          }
-        }
-
-        // Handle navigation
-        if (DIRECTORY_SEPARATOR === '\\') {
-          switch ($input) {
-            case 'n':
-              $page++;
-              break;
-            case 'p':
-              $page = max(1, $page - 1);
-              break;
-            case 'q':
-              $exit = true;
-              break;
-          }
-        } else {
-          switch ($input) {
-            case "\033[C": // →
-              $page++;
-              break;
-            case "\033[D": // ←
-              $page = max(1, $page - 1);
-              break;
-            case 'q':
-              $exit = true;
-              break;
-          }
-        }
-      }
-
-      // Restore terminal settings on *nix
-      if (DIRECTORY_SEPARATOR !== '\\') {
-        system('stty sane');
-      }
-
-      // Cleanup
-      fclose($stdin);
+      $this->getService('utils/misc')->printDataTable("Modules List", $getRows, $columns, $params);
     });
 
     $this->addCommand('modules:create', function () {
@@ -159,12 +77,12 @@ class Commands extends Cli
     $this->addCommand('modules:remove', function () {
       Utils::printLn("Welcome to the Module Removal Command!");
       Utils::printLn();
-      $moduleId = readline("  >> Please, enter the Module ID you want to remove: ");
+      $moduleName = $this->setModuleName();
 
       $this->getDao('MDC_MODULE')
-        ->filter('id_mdc_module')->equalsTo($moduleId)
+        ->filter('ds_title')->equalsTo($moduleName)
         ->delete();
-      Utils::printLn("  >> Module with ID {$moduleId} removed successfully!");
+      Utils::printLn("  >> Module '{$moduleName}' removed successfully!");
     });
 
     $this->addCommand('modules:map', function ($args) {
@@ -172,48 +90,65 @@ class Commands extends Cli
       require_once CORE_PATH . '/database/' . DBTYPE . '/class.sql.php';
       require_once CORE_PATH . '/dbmigrations/class.migration.php';
 
-
       $moduleName = $args['--module'] ?? null;
-      $appModName = readline("  >> Please, define the main app name as a module to be represented in this control (Ex.: 'General'): ");
+      if ($moduleName == 'modcontrol') {
+        Utils::printLn("  >> The 'modcontrol' module is reserved for this command and cannot be mapped.");
+        return;
+      }
+
+      $moduleName = ucwords($moduleName);
 
       if ($moduleName !== null) {
         $module = $this->getDao('MDC_MODULE')
           ->filter('ds_title')->equalsTo($moduleName)
           ->first();
         if (!$module) {
-          throw new Exception("Module with name {$moduleName} not found.");
+          $this->getDao('MDC_MODULE')
+            ->insert([
+              'ds_key' => 'mdc-' . uniqid(),
+              'ds_title' => $moduleName,
+            ]);
+
+          Dao::flush();
         }
       }
 
+      // Map all modules and their entities:
       $entities = [];
       $mList = ModLoader::listMigrations($moduleName ?? null);
+      // Iterate over modules:
       foreach ($mList as $modName => $mData) {
         $entities = [];
+        if ($modName == 'modcontrol') continue;
 
         $modName = ucwords($modName);
 
         Utils::printLn("  >> Mapping module {$modName}'s entities...");
+        if (empty($module = $this->getService('modcontrol/control')->get(['ds_title' => $modName]))) {
+          $module = $this->getDao('MDC_MODULE')
+            ->insert([
+              'ds_key' => 'mdc-' . uniqid(),
+              'ds_title' => $modName,
+            ]);
+        }
+
+        // Iterate over module migrations:
         foreach ($mData as $mDataItem) {
           $mobj = ObjLoader::load($mDataItem->filepath);
           $mobj->apply();
           $operations = $mobj->getOperations();
 
-          if (empty($module = $this->getService('modcontrol/control')->get(['ds_title' => $modName]))) {
-            $module = $this->getDao('MDC_MODULE')
-              ->insert([
-                'ds_key' => 'mdc-' . uniqid(),
-                'ds_title' => $modName,
-              ]);
-          }
-
+          // Iterate over migration operations:
           foreach ($operations as $op) {
             if ($op->type != 'table') continue;
 
             $blueprint = $op->blueprint;
+            if (array_key_exists($blueprint->getName(), $entities)) continue;
+
             $entity = [
               'id_mdc_module' => $module->id_mdc_module,
               'ds_entity_name' => $blueprint->getName(),
-              'ds_entity_label' => $blueprint->getName(),
+              'ds_entity_label' => $blueprint->getLabel(),
             ];
 
             $conflict = $this->getDao('MDC_MODULE_ENTITY')
@@ -225,27 +160,39 @@ class Commands extends Cli
               continue;
             }
 
-            $entities[] = $this->getDao('MDC_MODULE_ENTITY')
+            $entities[$blueprint->getName()] = $this->getDao('MDC_MODULE_ENTITY')
               ->insert($entity);
-          }
-        }
+          } // migration operations
 
+          Dao::flush();
+        } // module migrations
+
+        if (empty($entities)) {
+          Utils::printLn("  >> No new entities found in module '{$modName}'.");
+          Utils::printLn();
+          continue;
+        }
         Utils::printLn("  >> Module '{$modName}' mapped successfully with the following new entities:");
         Utils::printLn();
         foreach ($entities as $entity) {
           Utils::printLn("    -> {$entity->ds_entity_name} ({$entity->ds_entity_label})");
         }
         Utils::printLn();
-      }
+      } // modules
 
-      // Insert a module to represent the app:
+      // Map the main app module:
+      Utils::printLn("  >> Mapping Main App's entities...");
+
       if (empty($appMod = $this->getDao('MDC_MODULE')
-        ->filter('ds_title')->equalsTo($appModName)
+        ->filter('do_is_mainapp')->equalsTo('Y')
         ->first())) {
+        $appModName = readline("  >> Please, define the main app name as a module to be represented in this control (Ex.: 'General'): ");
+
         $appMod = $this->getDao('MDC_MODULE')
           ->insert([
             'ds_key' => 'mdc-' . uniqid(),
-            'ds_title' => $appModName,
+            'ds_title' => ucwords($appModName),
+            'do_is_mainapp' => 'Y',
           ]);
       }
 
@@ -261,18 +208,26 @@ class Commands extends Cli
           if ($op->type != 'table') continue;
 
           $blueprint = $op->blueprint;
+          if (array_key_exists($blueprint->getName(), $entities)) continue;
+
           $entity = [
             'id_mdc_module' => $appMod->id_mdc_module,
             'ds_entity_name' => $blueprint->getName(),
-            'ds_entity_label' => $blueprint->getName(),
+            'ds_entity_label' => $blueprint->getLabel(),
           ];
 
-          $entities[] = $this->getDao('MDC_MODULE_ENTITY')
+          $entities[$blueprint->getName()] = $this->getDao('MDC_MODULE_ENTITY')
             ->insert($entity);
         }
       }
 
-      Utils::printLn("  >> Module '{$appModName}' mapped successfully with the following new entities:");
+      if (empty($entities)) {
+        Utils::printLn("  >> No new entities found in Main Application.");
+        Utils::printLn();
+        return;
+      }
+
+      Utils::printLn("  >> Module '{$appMod->ds_title}' mapped successfully with the following new entities:");
       Utils::printLn();
       foreach ($entities as $entity) {
         Utils::printLn("    -> {$entity->ds_entity_name} ({$entity->ds_entity_label})");
@@ -282,140 +237,62 @@ class Commands extends Cli
 
     $this->addCommand('entities:list', function ($args) {
       // Extract and normalize our options
-      if (!isset($args['--module'])) {
-        Utils::printLn("  >> Please specify a module using --module=<module_name>");
-        return;
-      }
+      $moduleName = $this->setModuleName($args);
 
-      $moduleId = $args['--module'];
       $limit   = isset($args['--limit']) ? (int)$args['--limit'] : 10;
       $sortBy  = $args['--sort-by']         ?? null;
       $sortDir = $args['--sort-direction']  ?? 'ASC';
-      unset($args['--limit'], $args['--sort-by'], $args['--sort-direction']);
+      unset($args['--limit'], $args['--sort-by'], $args['--sort-direction'], $args['--module']);
 
       $page = isset($args['--page']) ? (int)$args['--page'] : 1;
       unset($args['--page']);
 
-      // --- <== HERE: open STDIN in BLOCKING mode (no stream_set_blocking) ===>
-      $stdin = fopen('php://stdin', 'r');
-      // on *nix, disable line buffering & echo
-      if (DIRECTORY_SEPARATOR !== '\\') {
-        system('stty -icanon -echo');
+      $params = array_merge($args, [
+        '$limit' => $limit,
+        '$limit_multiplier' => 1, // No multiplier for pagination
+        '$page'  => $page,
+      ]);
+      if ($sortBy) {
+        $params['$sort_by']        = $sortBy;
+        $params['$sort_direction'] = $sortDir;
       }
 
-      $exit = false;
-      while (! $exit) {
-        // Clear screen + move cursor home
-        if (DIRECTORY_SEPARATOR === '\\') {
-          system('cls');
-        } else {
-          echo "\033[2J\033[H";
-        }
+      $getRows = function () use (&$params, &$moduleName) {
+        $modParams = [
+          'ds_title' => $moduleName,
+        ];
+        return $this->getService('modcontrol/control')->getModuleEntities($params, $modParams);
+      };
 
-        // Header & hints
-        Utils::printLn($this->getService('utils/clihelper')->ansi("Welcome to the Module Entities List Command!\n", 'color: cyan; font-weight: bold'));
-        Utils::printLn("HINTS:");
-        Utils::printLn("  • --limit={$limit}   (items/page)");
-        Utils::printLn("  • --sort-by={$sortBy}   --sort-direction={$sortDir}");
-        if (DIRECTORY_SEPARATOR === '\\') {
-          Utils::printLn("  • Press 'n' = next page, 'p' = previous page, 'q' = quit");
-        } else {
-          Utils::printLn("  • ←/→ arrows to navigate pages, 'q' to quit");
-        }
-        Utils::printLn("  • Press 'ctrl+c' to exit at any time");
-        Utils::printLn();
+      $columns = [
+        'id_mdc_module_entity' => 'ID',
+        'ds_entity_name'       => 'Entity Name',
+        'ds_entity_label'      => 'Entity Label',
+        'dt_created'           => 'Created At',
+      ];
 
-        // Fetch & render
-        $params = array_merge($args, [
-          '$limit' => $limit,
-          '$limit_multiplier' => 1, // No multiplier for pagination
-          '$page'  => $page,
-          'id_mdc_module' => $moduleId,
-        ]);
-        if ($sortBy) {
-          $params['$sort_by']        = $sortBy;
-          $params['$sort_direction'] = $sortDir;
-        }
-
-        $rows = $this->getService('modcontrol/control')->getModuleEntities($params);
-
-        if (empty($rows)) {
-          Utils::printLn("  >> No entities found on page {$page}.");
-        } else {
-          Utils::printLn(" Page {$page} — showing " . count($rows) . " items");
-          Utils::printLn(str_repeat('─', 60));
-          $this->getService('utils/clihelper')->table($rows, [
-            'id_mdc_module_entity'           => 'ID',
-            'dt_created'                     => 'Created At',
-            'ds_entity_name'                 => 'Entity Name',
-            'ds_entity_label'                => 'Entity Label',
-            'modTitle'                       => 'Module',
-          ]);
-        }
-
-        // --- <== HERE: wait for exactly one keypress, blocking until you press ===>
-        $c = fgetc($stdin);
-        if (DIRECTORY_SEPARATOR === '\\') {
-          $input = strtolower($c);
-        } else {
-          if ($c === "\033") {             // arrow keys start with ESC
-            $input = $c . fgetc($stdin) . fgetc($stdin);
-          } else {
-            $input = $c;
-          }
-        }
-
-        // Handle navigation
-        if (DIRECTORY_SEPARATOR === '\\') {
-          switch ($input) {
-            case 'n':
-              $page++;
-              break;
-            case 'p':
-              $page = max(1, $page - 1);
-              break;
-            case 'q':
-              $exit = true;
-              break;
-          }
-        } else {
-          switch ($input) {
-            case "\033[C": // →
-              $page++;
-              break;
-            case "\033[D": // ←
-              $page = max(1, $page - 1);
-              break;
-            case 'q':
-              $exit = true;
-              break;
-          }
-        }
-      }
-
-      // Restore terminal settings on *nix
-      if (DIRECTORY_SEPARATOR !== '\\') {
-        system('stty sane');
-      }
-
-      // Cleanup
-      fclose($stdin);
+      $this->getService('utils/misc')->printDataTable("Module Entities List", $getRows, $columns, $params);
     });
 
     $this->addCommand('entities:add', function ($args) {
-      if (!isset($args['--module'])) {
-        Utils::printLn("  >> Please specify a module using --module=<module_id>");
-        return;
-      }
-
-      $moduleId = $args['--module'];
+      $moduleName = $this->setModuleName($args);
       Utils::printLn("Welcome to the Module Entity Add Command!");
-      Utils::printLn("This command will help you add a new entity to the module with ID {$moduleId}.");
+      Utils::printLn("This command will help you add a new entity to the module with name {$moduleName}.");
       Utils::printLn();
       Utils::printLn(" >> Please follow the prompts to define your entity informations.");
       Utils::printLn();
       Utils::printLn("  >> New Entity:");
       Utils::printLn("------------------------------------------------------");
+
+      $moduleId = $this->getDao('MDC_MODULE')
+        ->filter('ds_title')->equalsTo($moduleName)
+        ->first()
+        ->id_mdc_module ?? null;
+
+      if (!$moduleId) {
+        Utils::printLn("  >> Module with name '{$moduleName}' not found.");
+        return;
+      }
 
       $entity = $this->getService('utils/clihelper')->inputForm([
         'ds_entity_name' => [
@@ -442,15 +319,30 @@ class Commands extends Cli
     });
 
     $this->addCommand('entities:remove', function () {
-      $moduleId = readline("  >> Please, enter the Module ID to remove an entity from: ");
-      $entityName = readline("  >> Please, enter the Entity Name you want to remove: ");
-
       Utils::printLn("Welcome to the Module Entity Removal Command!");
       Utils::printLn();
+      Utils::printLn("  >> Please, enter the Entity Name you want to remove: ");
+      $moduleName = $this->setModuleName();
+      $entityName = $this->getService('utils/misc')->persistentCliInput(
+        function ($v) {
+          return !empty($v) && is_string($v);
+        },
+        "Please, enter the Entity Name you want to remove: "
+      );
+
       Utils::printLn("  >> Please confirm you want to remove the entity with name {$entityName}.");
       $confirm = readline("  >> Type 'yes' to confirm: ");
       if (strtolower($confirm) !== 'yes') {
         Utils::printLn("  >> Operation cancelled.");
+        return;
+      }
+
+      $moduleId = $this->getDao('MDC_MODULE')
+        ->filter('ds_title')->equalsTo($moduleName)
+        ->first()
+        ->id_mdc_module ?? null;
+      if (!$moduleId) {
+        Utils::printLn("  >> Module with name '{$moduleName}' not found.");
         return;
       }
 
@@ -485,26 +377,29 @@ class Commands extends Cli
         ],
         'modules:remove' => [
           'usage' => 'modcontrol:modules:remove',
-          'desc'  => 'Delete a module by its ID.',
+          'desc'  => 'Delete a module by its name.',
         ],
         'entities:list'   => [
           'usage' => 'modcontrol:entities:list [--module=<module_id>] [--limit=<n>] [--sort-by=<field>] [--sort-direction=<dir>] [--page=<n>]',
           'desc'  => 'Page through existing entities inside a module.',
           'flags' => [
-            '--module=<n>'         => 'Module ID to filter entities',
+            '--module=<module_name>'         => 'Module name to filter entities',
             '--limit=<n>'          => 'Items per page (default 10)',
             '--sort-by=<field>'    => 'Field to sort by',
             '--sort-direction=<d>' => 'ASC or DESC (default ASC)',
             '--page=<n>'           => 'Page number (default 1)',
           ],
         ],
-        'entities:create' => [
-          'usage' => 'modcontrol:entities:create',
+        'entities:add' => [
+          'usage' => 'modcontrol:entities:add [--module=<module_name>]',
           'desc'  => 'Interactively create a new entity inside a module.',
+          'flags' => [
+            '--module=<module_name>' => 'Module name to add the entity to',
+          ],
         ],
         'entities:remove' => [
           'usage' => 'modcontrol:entities:remove',
-          'desc'  => 'Interactively delete an entity by its module ID and its name.',
+          'desc'  => 'Interactively delete an entity by module and entity names.',
         ],
         'help'             => [
           'usage' => 'modcontrol:help',
@@ -537,9 +432,9 @@ class Commands extends Cli
           'opts' => '--module, --limit, --sort-by, --sort-direction, --page',
         ],
         [
-          'cmd'  => 'modcontrol:entities:create',
+          'cmd'  => 'modcontrol:entities:add',
           'desc' => 'Interactively create a new entity inside a module',
-          'opts' => '(no flags)',
+          'opts' => '--module',
         ],
         [
           'cmd'  => 'modcontrol:entities:remove',
@@ -577,5 +472,22 @@ class Commands extends Cli
 
       Utils::printLn(''); // trailing newline
     });
+  }
+
+  private function setModuleName(array $args = []): string
+  {
+    // Extract and normalize our options
+    if (isset($args['--module'])) {
+      $moduleName = $args['--module'];
+    } else {
+      Utils::printLn("  >> Please, enter the Module Name: ");
+      $moduleName = $this->getService('utils/misc')->persistentCliInput(
+        function ($v) {
+          return !empty($v) && is_string($v);
+        },
+        "Module name must be a string and cannot be empty. Please try again:"
+      );
+    }
+    return $moduleName;
   }
 }

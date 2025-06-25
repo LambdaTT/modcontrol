@@ -87,19 +87,20 @@ class ModControlService extends Service
    * @param array $modParams
    * @return array
    */
-  public function getModuleEntities($modParams)
+  public function getModuleEntities(array $params, array $modParams = [])
   {
     return $this->getDao('MDC_MODULE_ENTITY')
       ->bindParams($modParams, 'modFilters')
+      ->bindParams($params)
       ->find(
         "SELECT 
             ent.*,
-            mod.ds_title AS modTitle 
+            m.ds_title AS modTitle 
           FROM `MDC_MODULE_ENTITY` ent
           JOIN (
             SELECT * FROM `MDC_MODULE` 
             #modFilters#
-          ) mod ON ent.id_mdc_module = mod.id_mdc_module"
+          ) m ON ent.id_mdc_module = m.id_mdc_module"
       );
   }
 }
