@@ -14,25 +14,7 @@ class Commands extends Cli
   public function init()
   {
     $this->addCommand('modules:list', function ($args) {
-      // Extract and normalize our options
-      $limit   = isset($args['--limit']) ? (int)$args['--limit'] : 10;
-      $sortBy  = $args['--sort-by']         ?? null;
-      $sortDir = $args['--sort-direction']  ?? 'ASC';
-      $page = isset($args['--page']) ? (int)$args['--page'] : 1;
-      unset($args['--limit'], $args['--sort-by'], $args['--sort-direction'], $args['--page']);
-
-      $params = array_merge($args, [
-        '$limit' => $limit,
-        '$limit_multiplier' => 1, // No multiplier for pagination
-        '$page'  => $page,
-      ]);
-
-      if ($sortBy) {
-        $params['$sort_by']        = $sortBy;
-        $params['$sort_direction'] = $sortDir;
-      }
-
-      $getRows = function () use (&$params) {
+      $getRows = function ($params) {
         return $this->getService('modcontrol/control')->list($params);
       };
 
@@ -43,7 +25,7 @@ class Commands extends Cli
         'numEntities'             => 'Entities',
       ];
 
-      $this->getService('utils/misc')->printDataTable("Modules List", $getRows, $columns, $params);
+      $this->getService('utils/misc')->printDataTable("Modules List", $getRows, $columns, $args);
     });
 
     $this->addCommand('modules:create', function () {
@@ -238,26 +220,7 @@ class Commands extends Cli
     $this->addCommand('entities:list', function ($args) {
       // Extract and normalize our options
       $moduleName = $this->setModuleName($args);
-
-      $limit   = isset($args['--limit']) ? (int)$args['--limit'] : 10;
-      $sortBy  = $args['--sort-by']         ?? null;
-      $sortDir = $args['--sort-direction']  ?? 'ASC';
-      unset($args['--limit'], $args['--sort-by'], $args['--sort-direction'], $args['--module']);
-
-      $page = isset($args['--page']) ? (int)$args['--page'] : 1;
-      unset($args['--page']);
-
-      $params = array_merge($args, [
-        '$limit' => $limit,
-        '$limit_multiplier' => 1, // No multiplier for pagination
-        '$page'  => $page,
-      ]);
-      if ($sortBy) {
-        $params['$sort_by']        = $sortBy;
-        $params['$sort_direction'] = $sortDir;
-      }
-
-      $getRows = function () use (&$params, &$moduleName) {
+      $getRows = function ($params) use (&$moduleName) {
         $modParams = [
           'ds_title' => $moduleName,
         ];
@@ -271,7 +234,7 @@ class Commands extends Cli
         'dt_created'           => 'Created At',
       ];
 
-      $this->getService('utils/misc')->printDataTable("Module Entities List", $getRows, $columns, $params);
+      $this->getService('utils/misc')->printDataTable("Module Entities List", $getRows, $columns, $args);
     });
 
     $this->addCommand('entities:add', function ($args) {
