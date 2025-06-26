@@ -167,7 +167,7 @@ class Commands extends Cli
       if (empty($appMod = $this->getDao('MDC_MODULE')
         ->filter('do_is_mainapp')->equalsTo('Y')
         ->first())) {
-        $appModName = readline("  >> Please, define the main app name as a module to be represented in this control (Ex.: 'General'): ");
+        $appModName = readline("  >> Please, define the main app name as a module to be represented in this control (Ex.: 'General'): ") ?? 'General';
 
         $appMod = $this->getDao('MDC_MODULE')
           ->insert([
