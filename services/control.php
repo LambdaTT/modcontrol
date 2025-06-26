@@ -92,7 +92,7 @@ class ModControlService extends Service
    * @param array $modParams
    * @return array
    */
-  public function getModuleEntities(array $params, array $modParams = [])
+  public function getModuleEntities(array $params = [], array $modParams = [])
   {
     return $this->getDao('MDC_MODULE_ENTITY')
       ->bindParams($modParams, 'modFilters')

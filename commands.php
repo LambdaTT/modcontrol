@@ -78,9 +78,8 @@ class Commands extends Cli
         return;
       }
 
-      $moduleName = ucwords($moduleName);
-
       if ($moduleName !== null) {
+        $moduleName = ucwords($moduleName);
         $module = $this->getDao('MDC_MODULE')
           ->filter('ds_title')->equalsTo($moduleName)
           ->first();
