@@ -82,6 +82,11 @@ class ModControlService extends Service
       ->first();
   }
 
+  public function moduleExists(string $uTag)
+  {
+    return empty($this->get(['ds_utag' => $uTag]));
+  }
+
   /**
    * Get all entities associated with a module based on the provided parameters.
    * @param array $modParams
