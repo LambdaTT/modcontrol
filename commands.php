@@ -70,7 +70,7 @@ class Commands extends Cli
     $this->addCommand('modules:map', function ($args) {
       require_once CORE_PATH . '/database/class.vocab.php';
       require_once CORE_PATH . '/database/' . DBTYPE . '/class.sql.php';
-      require_once CORE_PATH . '/dbmigrations/class.migration.php';
+      require_once CORE_PATH . '/DbManager/class.migration.php';
 
       $moduleName = $args['--module'] ?? null;
       if ($moduleName == 'modcontrol') {
