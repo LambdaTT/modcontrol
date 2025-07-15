@@ -1,17 +1,18 @@
 <?php
 
-namespace Filemanager\Commands;
+namespace Modcontrol\Commands;
 
 use SplitPHP\AppLoader;
 use SplitPHP\Cli;
 use SplitPHP\Database\Dao;
+use SplitPHP\Database\Database;
 use SplitPHP\ModLoader;
 use SplitPHP\Utils;
 use SplitPHP\ObjLoader;
 
 class Commands extends Cli
 {
-  public function init()
+  public function init(): void
   {
     $this->addCommand('modules:list', function ($args) {
       $getRows = function ($params) {
@@ -29,12 +30,12 @@ class Commands extends Cli
     });
 
     $this->addCommand('modules:create', function () {
-      Utils::printLn("Welcome to the Modules Create Command!");
-      Utils::printLn("This command will help you add a new module.");
+      Utils::printLn("\033[36m>> 👋 Welcome to the Modules Create Command!\033[0m");
+      Utils::printLn("  This command will help you add a new module.");
       Utils::printLn();
-      Utils::printLn(" >> Please follow the prompts to define your module informations.");
+      Utils::printLn("  Please follow the prompts to define your module informations.");
       Utils::printLn();
-      Utils::printLn("  >> New Module:");
+      Utils::printLn("  \033[36m>> New Module:\033[0m");
       Utils::printLn("------------------------------------------------------");
 
       $module = $this->getService('utils/clihelper')->inputForm([
@@ -50,31 +51,41 @@ class Commands extends Cli
       $record = $this->getDao('MDC_MODULE')
         ->insert($module);
 
-      Utils::printLn("  >> Module added successfully!");
+      Utils::printLn("  \033[92m>> ✅ Module added successfully!\033[0m");
       foreach ($record as $key => $value) {
         Utils::printLn("    -> {$key}: {$value}");
       }
     });
 
     $this->addCommand('modules:remove', function () {
-      Utils::printLn("Welcome to the Module Removal Command!");
+      Utils::printLn("\033[36m>>> 👋 Welcome to the Module Removal Command!\033[0m");
       Utils::printLn();
       $moduleName = $this->setModuleName();
 
       $this->getDao('MDC_MODULE')
         ->filter('ds_title')->equalsTo($moduleName)
         ->delete();
-      Utils::printLn("  >> Module '{$moduleName}' removed successfully!");
+      Utils::printLn("  \033[92m>>> ✅ Module \033[34m'{$moduleName}'\033[92m removed successfully!\033[0m");
     });
 
     $this->addCommand('modules:map', function ($args) {
       require_once CORE_PATH . '/database/class.vocab.php';
-      require_once CORE_PATH . '/database/' . DBTYPE . '/class.sql.php';
-      require_once CORE_PATH . '/DbManager/class.migration.php';
+      require_once CORE_PATH . '/database/' . Database::getRdbmsName() . '/class.sql.php';
+      require_once CORE_PATH . '/dbmanager/class.migration.php';
+
+      Utils::printLn("  \033[36m>> 👋 Welcome to the Module Mapping Command!\033[0m");
+      echo PHP_EOL;
+      sleep(1);
 
       $moduleName = $args['--module'] ?? null;
       if ($moduleName == 'modcontrol') {
-        Utils::printLn("  >> The 'modcontrol' module is reserved for this command and cannot be mapped.");
+        Utils::printLn("  \033[91m>> 💣 The \033[34m'modcontrol'\033[36m module is reserved for this command and cannot be mapped.\033[0m");
+        return;
+      }
+
+      $ignoreModule = $args['--ignore'] ?? null;
+      if ($ignoreModule == $moduleName) {
+        Utils::printLn("  \033[93m>> ⚠️ The module  \033[34m'{$moduleName}'\033[93m is set to be ignored. Skipping mapping.\033[0m");
         return;
       }
 
@@ -100,11 +111,11 @@ class Commands extends Cli
       // Iterate over modules:
       foreach ($mList as $modName => $mData) {
         $entities = [];
-        if ($modName == 'modcontrol') continue;
+        if ($modName == 'modcontrol' || $modName == $ignoreModule) continue;
 
         $modName = ucwords($modName);
 
-        Utils::printLn("  >> Mapping module {$modName}'s entities...");
+        Utils::printLn("  \033[36m>> ⏳ Mapping module {$modName}'s entities...\033[0m");
         if (empty($module = $this->getService('modcontrol/control')->get(['ds_title' => $modName]))) {
           $module = $this->getDao('MDC_MODULE')
             ->insert([
@@ -149,11 +160,11 @@ class Commands extends Cli
         } // module migrations
 
         if (empty($entities)) {
-          Utils::printLn("  >> No new entities found in module '{$modName}'.");
+          Utils::printLn("  \033[93m>> ⚠️  No new entities found in module \033[34m'{$modName}'\033[93m.\033[0m");
           Utils::printLn();
           continue;
         }
-        Utils::printLn("  >> Module '{$modName}' mapped successfully with the following new entities:");
+        Utils::printLn("  \033[92m>> ✅ Module \033[34m'{$modName}'\033[92m mapped successfully with the following new entities:\033[0m");
         Utils::printLn();
         foreach ($entities as $entity) {
           Utils::printLn("    -> {$entity->ds_entity_name} ({$entity->ds_entity_label})");
@@ -162,12 +173,12 @@ class Commands extends Cli
       } // modules
 
       // Map the main app module:
-      Utils::printLn("  >> Mapping Main App's entities...");
+      Utils::printLn("  \033[36m>> ⏳ Mapping Main App's entities...\033[0m");
 
       if (empty($appMod = $this->getDao('MDC_MODULE')
         ->filter('do_is_mainapp')->equalsTo('Y')
         ->first())) {
-        $appModName = readline("  >> Please, define the main app name as a module to be represented in this control (Ex.: 'General'): ") ?: 'General';
+        $appModName = readline("  \033[36m>> Please, define the main app name as a module to be represented in this control (Ex.: 'General'): \033[0m") ?: 'General';
 
         $appMod = $this->getDao('MDC_MODULE')
           ->insert([
@@ -203,12 +214,13 @@ class Commands extends Cli
       }
 
       if (empty($entities)) {
-        Utils::printLn("  >> No new entities found in Main Application.");
+        Utils::printLn();
+        Utils::printLn("  \033[93m>> ⚠️  No new entities found in \033[34mMain Application\033[93m.\033[0m");
         Utils::printLn();
         return;
       }
 
-      Utils::printLn("  >> Module '{$appMod->ds_title}' mapped successfully with the following new entities:");
+      Utils::printLn("  \033[92m>> ✅ Module \033[34m'{$appMod->ds_title}'\033[92m mapped successfully with the following new entities:\033[0m");
       Utils::printLn();
       foreach ($entities as $entity) {
         Utils::printLn("    -> {$entity->ds_entity_name} ({$entity->ds_entity_label})");
