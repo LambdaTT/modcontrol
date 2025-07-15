@@ -6,7 +6,7 @@ use SplitPHP\WebService;
 
 class ModControl extends WebService
 {
-  public function init()
+  public function init(): void
   {
     /////////////////
     // MODULE ENDPOINTS:
