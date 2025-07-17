@@ -2,6 +2,7 @@
 
 namespace Modcontrol\Routes;
 
+use SplitPHP\Request;
 use SplitPHP\WebService;
 
 class ModControl extends WebService
@@ -12,15 +13,20 @@ class ModControl extends WebService
     // MODULE ENDPOINTS:
     /////////////////
 
-    $this->addEndpoint('GET', '/v1/module/?moduleId?', function ($params) {
+    $this->addEndpoint('GET', '/v1/module/?moduleKey?', function (Request $r) {
       // Auth user login:
       if (!$this->getService('iam/session')->authenticate()) return $this->response->withStatus(401);
 
-      $data = $this->getService('modcontrol/control')->get(['id_core_module' => $params['moduleId']]);
+      $params = [
+        'ds_key' => $r->getRoute()->params['moduleKey']
+      ];
+
+      $data = $this->getService('modcontrol/control')->get($params);
       if (empty($data)) return $this->response->withStatus(404);
 
       return $this->response->withData($data);
     });
+
     $this->addEndpoint('GET', '/v1/module', function ($params) {
       // Auth user login:
       if (!$this->getService('iam/session')->authenticate()) return $this->response->withStatus(401);

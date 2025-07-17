@@ -58,6 +58,7 @@ class ModControlService extends Service
       ->find(
         "SELECT 
             m.ds_title, 
+            m.ds_key, 
             m.dt_created, 
             m.id_mdc_module,
             COUNT(ent.id_mdc_module_entity) AS numEntities
