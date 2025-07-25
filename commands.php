@@ -89,6 +89,7 @@ class Commands extends Cli
         return;
       }
 
+      // For a specific module, we can ask the user to define it:
       if ($moduleName !== null) {
         $moduleName = ucwords($moduleName);
         $module = $this->getDao('MDC_MODULE')
@@ -157,6 +158,8 @@ class Commands extends Cli
           } // migration operations
 
           Dao::flush();
+          ObjLoader::unload($mDataItem->filepath);
+          unset($mobj, $operations, $op, $blueprint);
         } // module migrations
 
         if (empty($entities)) {
@@ -211,6 +214,9 @@ class Commands extends Cli
           $entities[$blueprint->getName()] = $this->getDao('MDC_MODULE_ENTITY')
             ->insert($entity);
         }
+
+        ObjLoader::unload($mData->filepath);
+        unset($mobj, $operations, $op, $blueprint);
       }
 
       if (empty($entities)) {
