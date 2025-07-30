@@ -77,16 +77,18 @@ class Commands extends Cli
       echo PHP_EOL;
       sleep(1);
 
-      $moduleName = $args['--module'] ?? null;
-      if ($moduleName == 'modcontrol') {
-        Utils::printLn("  \033[91m>> 💣 The \033[34m'modcontrol'\033[36m module is reserved for this command and cannot be mapped.\033[0m");
-        return;
+      if (!is_null($moduleName = $args['--module'] ?? null)) {
+        if ($moduleName == 'modcontrol') {
+          Utils::printLn("  \033[91m>> 💣 The \033[34m'modcontrol'\033[36m module is reserved for this command and cannot be mapped.\033[0m");
+          return;
+        }
       }
 
-      $ignoreModule = $args['--ignore'] ?? null;
-      if ($ignoreModule == $moduleName) {
-        Utils::printLn("  \033[93m>> ⚠️ The module  \033[34m'{$moduleName}'\033[93m is set to be ignored. Skipping mapping.\033[0m");
-        return;
+      if (!is_null($ignoreModule = $args['--ignore'] ?? null)) {
+        if ($ignoreModule == $moduleName) {
+          Utils::printLn("  \033[93m>> ⚠️ The module  \033[34m'{$moduleName}'\033[93m is set to be ignored. Skipping mapping.\033[0m");
+          return;
+        }
       }
 
       // For a specific module, we can ask the user to define it:
